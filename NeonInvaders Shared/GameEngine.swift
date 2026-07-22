@@ -65,9 +65,9 @@ struct PowerUp {
 struct Shield {
     var position: SIMD2<Float>
     var pixels: [[Bool]]
-    static let cols = 20
-    static let rows = 12
-    static let pixelSize: Float = 4.0
+    static let cols = 16
+    static let rows = 10
+    static let pixelSize: Float = 3.5
 }
 
 struct UFO {
@@ -227,11 +227,12 @@ class GameEngine {
     func setupShields() {
         shields.removeAll()
         let shieldW = Float(Shield.cols) * Shield.pixelSize
-        for i in 0..<3 {
-            let cx = W / 4 * Float(i + 1)
+        // Spread three shields wider apart across the play field.
+        let centers: [Float] = [W * 0.18, W * 0.5, W * 0.82]
+        for cx in centers {
             var pixels = [[Bool]](repeating: [Bool](repeating: true, count: Shield.cols), count: Shield.rows)
             // carve arch at bottom centre
-            for r in 0..<5 { for c in 6..<14 { pixels[Shield.rows - 1 - r][c] = false } }
+            for r in 0..<4 { for c in 5..<11 { pixels[Shield.rows - 1 - r][c] = false } }
             shields.append(Shield(position: SIMD2(cx - shieldW/2, H - 200), pixels: pixels))
         }
     }

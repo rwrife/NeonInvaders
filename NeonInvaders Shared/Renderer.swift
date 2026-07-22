@@ -233,34 +233,27 @@ class Renderer: NSObject, MTKViewDelegate {
         for (nx, ny, nc) in nebulae {
             let pulse = 0.6 + 0.4 * sin(game.time * 0.3 + nx * 5)
             var c = nc; c.w = Float(pulse) * 0.8
-            quad(x: nx*vx - 150, y: ny*vy - 100, w: 300, h: 200, c, to: &additiveVerts)
+            // Slow parallax drift (farthest layer), wrapping vertically.
+            let baseY = ny * vy - 100
+            let y = (baseY + game.time * 5).truncatingRemainder(dividingBy: vy + 200) - 100
+            quad(x: nx*vx - 150, y: y, w: 300, h: 200, c, to: &additiveVerts)
         }
 
-        // Stars scaled from normalized (0..1) to drawable space
+        // Parallax scrolling starfield: brighter (nearer) stars scroll faster.
         for (pos, bright, tw) in stars {
+            let speed = 8 + bright * 55            // drawable px/sec by depth layer
+            let y = (pos.y * vy + game.time * speed).truncatingRemainder(dividingBy: vy)
             let b = Float(bright) * (0.5 + 0.5 * sin(game.time * 1.2 + tw))
             let c: SIMD4<Float> = SIMD4(b*0.85, b*0.9, b, 1)
             let sz: Float = bright > 0.85 ? 2.5 : (bright > 0.65 ? 1.8 : 1.2)
-            quad(x: pos.x * vx, y: pos.y * vy, w: sz, h: sz, c, to: &arr)
+            quad(x: pos.x * vx, y: y, w: sz, h: sz, c, to: &arr)
             // Brightest stars get a tiny additive cross-flare
             if bright > 0.92 {
                 let f: SIMD4<Float> = SIMD4(b*0.5, b*0.55, b*0.6, 0.6)
-                quad(x: pos.x*vx - sz, y: pos.y*vy, w: sz*3, h: sz*0.5, f, to: &additiveVerts)
-                quad(x: pos.x*vx, y: pos.y*vy - sz, w: sz*0.5, h: sz*3, f, to: &additiveVerts)
+                quad(x: pos.x*vx - sz, y: y, w: sz*3, h: sz*0.5, f, to: &additiveVerts)
+                quad(x: pos.x*vx, y: y - sz, w: sz*0.5, h: sz*3, f, to: &additiveVerts)
             }
         }
-    }
-
-    // MARK: - Game border (drawable space)
-
-    func drawGameBorder(to arr: inout [SpriteVertex]) {
-        let s = gameScale; let off = gameOffset
-        let gw = Renderer.gameW * s; let gh = Renderer.gameH * s
-        let c: SIMD4<Float> = SIMD4(0.2, 0.7, 0.2, 0.5)
-        quad(x: off.x - 1,       y: off.y - 1,      w: gw + 2,  h: 1.5, c, to: &arr)
-        quad(x: off.x - 1,       y: off.y + gh,     w: gw + 2,  h: 1.5, c, to: &arr)
-        quad(x: off.x - 1,       y: off.y,           w: 1.5,     h: gh,  c, to: &arr)
-        quad(x: off.x + gw,      y: off.y,           w: 1.5,     h: gh,  c, to: &arr)
     }
 
     // MARK: - Game entity drawing (game space 0..800, 0..600)
@@ -535,9 +528,6 @@ class Renderer: NSObject, MTKViewDelegate {
         for i in bgAdditive..<additiveVerts.count {
             additiveVerts[i].position = additiveVerts[i].position * s + off
         }
-
-        // --- Phase 4: draw border around game area (drawable space, after transform) ---
-        drawGameBorder(to: &normalVerts)
 
         // --- Submit ---
         guard let rpd = view.currentRenderPassDescriptor,
