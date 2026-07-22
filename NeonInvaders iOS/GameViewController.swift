@@ -34,6 +34,15 @@ class GameViewController: UIViewController {
     override var prefersStatusBarHidden: Bool { true }
     override var prefersHomeIndicatorAutoHidden: Bool { true }
 
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        guard renderer != nil else { return }
+        let insets = view.safeAreaInsets
+        let scale = Float(mtkView.contentScaleFactor)
+        renderer.safePaddingTop    = Float(insets.top)    * scale
+        renderer.safePaddingBottom = Float(insets.bottom) * scale
+    }
+
     // MARK: - Touch handling
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {

@@ -18,19 +18,43 @@ class Renderer: NSObject, MTKViewDelegate {
 
     var normalVerts: [SpriteVertex] = []
     var additiveVerts: [SpriteVertex] = []
-    var stars: [(SIMD2<Float>, Float, Float)] = []  // pos, brightness, twinkle
 
-    // Pre-allocated GPU buffers – avoids the 4 KB setVertexBytes limit
+    // Pre-allocated GPU buffers
     var normalBuffer: MTLBuffer!
     var additiveBuffer: MTLBuffer!
     static let maxVertices = 150_000
 
-    // Always logical 800×600; vertex shader maps this to NDC
-    let logicalSize = SIMD2<Float>(800, 600)
+    // Actual drawable size in pixels (updated from MTKViewDelegate)
+    var viewSize: SIMD2<Float> = SIMD2(800, 600)
+
+    // Safe-area padding in drawable pixels (set from view controller)
+    var safePaddingTop:    Float = 0
+    var safePaddingBottom: Float = 0
+
+    // Logical game dimensions
+    static let gameW: Float = 800
+    static let gameH: Float = 600
+
+    // Stars: normalized (0..1) positions so they always fill the drawable
+    var stars: [(SIMD2<Float>, Float, Float)] = []  // normPos, brightness, twinkle
+
+    // Computed letterbox parameters
+    var gameScale: Float {
+        let availH = viewSize.y - safePaddingTop - safePaddingBottom
+        return min(viewSize.x / Renderer.gameW, availH / Renderer.gameH)
+    }
+    var gameOffset: SIMD2<Float> {
+        let s = gameScale
+        let availH = viewSize.y - safePaddingTop - safePaddingBottom
+        return SIMD2(
+            (viewSize.x - Renderer.gameW * s) / 2,
+            safePaddingTop + (availH - Renderer.gameH * s) / 2
+        )
+    }
 
     var lastTime: CFTimeInterval = 0
 
-    // 5×7 bitmap font. 7 rows, each row = 5 bits (bit4 = leftmost).
+    // 5×7 bitmap font – 7 rows, each row = 5 bits (bit4 = leftmost)
     static let font: [Character: [UInt8]] = [
         "0": [0x0E,0x11,0x13,0x15,0x19,0x11,0x0E],
         "1": [0x04,0x0C,0x04,0x04,0x04,0x04,0x0E],
@@ -84,7 +108,7 @@ class Renderer: NSObject, MTKViewDelegate {
                    [0x3C,0x7E,0xFF,0xDB,0xFF,0xA5,0x5A,0x00]],
     ]
 
-    // Player ship: 9 cols × 6 rows (bits 8..0 = left..right)
+    // Player ship: 9 cols × 6 rows
     static let playerArt: [UInt16] = [
         0b000010000,
         0b000111000,
@@ -110,7 +134,7 @@ class Renderer: NSObject, MTKViewDelegate {
 
         metalKitView.colorPixelFormat = .bgra8Unorm_srgb
         metalKitView.depthStencilPixelFormat = .invalid
-        metalKitView.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        metalKitView.clearColor = MTLClearColor(red: 0.01, green: 0.01, blue: 0.04, alpha: 1)
         metalKitView.preferredFramesPerSecond = 60
 
         guard let lib = dev.makeDefaultLibrary(),
@@ -139,8 +163,9 @@ class Renderer: NSObject, MTKViewDelegate {
         normalBuffer   = dev.makeBuffer(length: bufLen, options: .storageModeShared)
         additiveBuffer = dev.makeBuffer(length: bufLen, options: .storageModeShared)
 
-        for _ in 0..<200 {
-            stars.append((SIMD2(Float.random(in: 0...800), Float.random(in: 0...600)),
+        // Normalized (0..1) star positions so they always fill the full drawable
+        for _ in 0..<280 {
+            stars.append((SIMD2(Float.random(in: 0...1), Float.random(in: 0...1)),
                           Float.random(in: 0.3...1.0),
                           Float.random(in: 0...(.pi * 2))))
         }
@@ -193,7 +218,52 @@ class Renderer: NSObject, MTKViewDelegate {
         drawText(text, x: cx - textW(text, s: s) / 2, y: y, s: s, c, to: &arr)
     }
 
-    // MARK: - Entity drawing
+    // MARK: - Full-screen background (drawable space)
+
+    func drawBackground(to arr: inout [SpriteVertex]) {
+        let vx = viewSize.x, vy = viewSize.y
+
+        // Subtle deep-space nebula blobs (additive)
+        let nebulae: [(Float, Float, SIMD4<Float>)] = [
+            (0.2, 0.3, SIMD4(0.05, 0.02, 0.12, 1)),
+            (0.7, 0.6, SIMD4(0.02, 0.05, 0.10, 1)),
+            (0.5, 0.15, SIMD4(0.06, 0.02, 0.08, 1)),
+            (0.3, 0.8, SIMD4(0.02, 0.06, 0.08, 1)),
+        ]
+        for (nx, ny, nc) in nebulae {
+            let pulse = 0.6 + 0.4 * sin(game.time * 0.3 + nx * 5)
+            var c = nc; c.w = Float(pulse) * 0.8
+            quad(x: nx*vx - 150, y: ny*vy - 100, w: 300, h: 200, c, to: &additiveVerts)
+        }
+
+        // Stars scaled from normalized (0..1) to drawable space
+        for (pos, bright, tw) in stars {
+            let b = Float(bright) * (0.5 + 0.5 * sin(game.time * 1.2 + tw))
+            let c: SIMD4<Float> = SIMD4(b*0.85, b*0.9, b, 1)
+            let sz: Float = bright > 0.85 ? 2.5 : (bright > 0.65 ? 1.8 : 1.2)
+            quad(x: pos.x * vx, y: pos.y * vy, w: sz, h: sz, c, to: &arr)
+            // Brightest stars get a tiny additive cross-flare
+            if bright > 0.92 {
+                let f: SIMD4<Float> = SIMD4(b*0.5, b*0.55, b*0.6, 0.6)
+                quad(x: pos.x*vx - sz, y: pos.y*vy, w: sz*3, h: sz*0.5, f, to: &additiveVerts)
+                quad(x: pos.x*vx, y: pos.y*vy - sz, w: sz*0.5, h: sz*3, f, to: &additiveVerts)
+            }
+        }
+    }
+
+    // MARK: - Game border (drawable space)
+
+    func drawGameBorder(to arr: inout [SpriteVertex]) {
+        let s = gameScale; let off = gameOffset
+        let gw = Renderer.gameW * s; let gh = Renderer.gameH * s
+        let c: SIMD4<Float> = SIMD4(0.2, 0.7, 0.2, 0.5)
+        quad(x: off.x - 1,       y: off.y - 1,      w: gw + 2,  h: 1.5, c, to: &arr)
+        quad(x: off.x - 1,       y: off.y + gh,     w: gw + 2,  h: 1.5, c, to: &arr)
+        quad(x: off.x - 1,       y: off.y,           w: 1.5,     h: gh,  c, to: &arr)
+        quad(x: off.x + gw,      y: off.y,           w: 1.5,     h: gh,  c, to: &arr)
+    }
+
+    // MARK: - Game entity drawing (game space 0..800, 0..600)
 
     func drawAlien(_ alien: Alien, to arr: inout [SpriteVertex]) {
         guard alien.entity.alive else { return }
@@ -217,11 +287,9 @@ class Renderer: NSObject, MTKViewDelegate {
         var c  = e.color
         if game.hasShield { c = SIMD4(0.4 + 0.2*sin(game.time*8), 0.7, 1.0, 1) }
         pixelArt16(Self.playerArt, bits: 9, x: x, y: y, s: sc, c, to: &arr)
-        // thruster glow
         let throb: Float = 0.5 + 0.5*sin(game.time*12)
-        var tg: SIMD4<Float> = SIMD4(0.2, 0.7, 1, 0.5*throb)
-        quad(x: e.position.x-5, y: e.position.y+e.size.y/2-2, w: 10, h: 7, tg, to: &additiveVerts)
-        // shield bubble
+        quad(x: e.position.x-5, y: e.position.y+e.size.y/2-2, w: 10, h: 7,
+             SIMD4(0.2, 0.7, 1, 0.5*throb), to: &additiveVerts)
         if game.hasShield {
             let r: Float = 30; let seg = 32
             let sc2: SIMD4<Float> = SIMD4(0.4, 0.7, 1, 0.2+0.1*sin(game.time*5))
@@ -251,7 +319,8 @@ class Renderer: NSObject, MTKViewDelegate {
         let c: SIMD4<Float> = SIMD4(0.3, 0.95, 0.3, 1)
         for s in game.shields {
             for row in 0..<Shield.rows { for col in 0..<Shield.cols where s.pixels[row][col] {
-                quad(x: s.position.x + Float(col)*ps, y: s.position.y + Float(row)*ps, w: ps-0.5, h: ps-0.5, c, to: &arr)
+                quad(x: s.position.x + Float(col)*ps, y: s.position.y + Float(row)*ps,
+                     w: ps-0.5, h: ps-0.5, c, to: &arr)
             }}
         }
     }
@@ -276,11 +345,8 @@ class Renderer: NSObject, MTKViewDelegate {
             quad(x: x-4, y: y-4, w: e.size.x+8, h: e.size.y+8, g, to: &additiveVerts)
             let label: String
             switch pu.type {
-            case .rapidFire:  label = "R"
-            case .spreadShot: label = "S"
-            case .laser:      label = "L"
-            case .extraLife:  label = "+"
-            case .shield:     label = "B"
+            case .rapidFire: label = "R"; case .spreadShot: label = "S"
+            case .laser: label = "L"; case .extraLife: label = "+"; case .shield: label = "B"
             }
             drawTextC(label, cx: e.position.x, y: y+2, s: 3, SIMD4(0,0,0,1), to: &arr)
         }
@@ -293,30 +359,18 @@ class Renderer: NSObject, MTKViewDelegate {
         }
     }
 
-    func drawStars(to arr: inout [SpriteVertex]) {
-        for (pos, bright, tw) in stars {
-            let b = bright * (0.5 + 0.5*sin(game.time*1.2+tw))
-            let c: SIMD4<Float> = SIMD4(b*0.85, b*0.9, b, 1)
-            let sz: Float = bright > 0.8 ? 2 : 1.5
-            quad(x: pos.x, y: pos.y, w: sz, h: sz, c, to: &arr)
-        }
-    }
-
     func drawHUD(to arr: inout [SpriteVertex]) {
-        let W = logicalSize.x, H = logicalSize.y
+        let W = Renderer.gameW, H = Renderer.gameH
         drawText("SCORE:\(game.score)", x: 10, y: 8, s: 2, SIMD4(0.3,1,0.3,1), to: &arr)
         let hi = game.highScores.first?.score ?? 0
-        let hiStr = "HI:\(hi)"
-        drawTextC(hiStr, cx: W/2, y: 8, s: 2, SIMD4(1,0.8,0.2,1), to: &arr)
+        drawTextC("HI:\(hi)", cx: W/2, y: 8, s: 2, SIMD4(1,0.8,0.2,1), to: &arr)
         let lvl = "LVL:\(game.level)"
         drawText(lvl, x: W - textW(lvl, s: 2) - 10, y: 8, s: 2, SIMD4(0.6,0.6,1,1), to: &arr)
 
-        // lives mini-ships
         for i in 0..<game.lives {
             pixelArt16(Self.playerArt, bits: 9, x: 10 + Float(i)*22, y: H-20, s: 1.8, SIMD4(0.2,1,0.4,1), to: &arr)
         }
 
-        // active power-up badge
         if let pu = game.activePowerUp {
             let (label, c): (String, SIMD4<Float>) = {
                 switch pu {
@@ -331,16 +385,14 @@ class Renderer: NSObject, MTKViewDelegate {
             drawTextC(label, cx: W/2, y: H-20, s: 2, blink, to: &arr)
         }
 
-        // separator line
         quad(x: 0, y: H-32, w: W, h: 1.5, SIMD4(0.3,0.9,0.3,0.7), to: &arr)
-        quad(x: 0, y: 28, w: W, h: 1.5, SIMD4(0.3,0.9,0.3,0.5), to: &arr)
+        quad(x: 0, y: 28,   w: W, h: 1.5, SIMD4(0.3,0.9,0.3,0.5), to: &arr)
     }
 
     // MARK: - Screens
 
     func drawSplash(to arr: inout [SpriteVertex]) {
-        let W = logicalSize.x, H = logicalSize.y; let cx = W/2
-        // Animated neon title
+        let W = Renderer.gameW, H = Renderer.gameH; let cx = W/2
         let title = "NEON INVADERS"; let ts: Float = 4.5
         let tw = textW(title, s: ts)
         var tx = cx - tw/2
@@ -352,7 +404,6 @@ class Renderer: NSObject, MTKViewDelegate {
             tx += 6*ts
         }
 
-        // High scores panel
         drawTextC("HIGH SCORES", cx: cx, y: H*0.30, s: 3, SIMD4(1,0.8,0.2,1), to: &arr)
         quad(x: cx-130, y: H*0.30+24, w: 260, h: 2, SIMD4(1,0.8,0.2,0.6), to: &arr)
 
@@ -367,25 +418,21 @@ class Renderer: NSObject, MTKViewDelegate {
             drawText("LVL \(hs.level)", x: cx+60, y: ry, s: 2, c, to: &arr)
         }
 
-        // Alien legend
-        let demos: [(AlienType, SIMD4<Float>, String, Int)] = [
-            (.squid,   SIMD4(0.5,0.5,1,1),  "= 30 PTS", 30),
-            (.crab,    SIMD4(0.3,1,1,1),    "= 20 PTS", 20),
-            (.octopus, SIMD4(0.9,0.4,1,1),  "= 10 PTS", 10),
+        let demos: [(AlienType, SIMD4<Float>, String)] = [
+            (.squid,   SIMD4(0.5,0.5,1,1),  "= 30 PTS"),
+            (.crab,    SIMD4(0.3,1,1,1),    "= 20 PTS"),
+            (.octopus, SIMD4(0.9,0.4,1,1),  "= 10 PTS"),
         ]
         var dx: Float = cx - 185
         let af = Int(game.time*2) & 1
-        for (t, c, pts, _) in demos {
+        for (t, c, pts) in demos {
             pixelArt8(Self.alienArt[t]![af], x: dx, y: H*0.70, s: 3, c, to: &arr)
             drawText(pts, x: dx+32, y: H*0.70+8, s: 2, c, to: &arr)
             dx += 130
         }
-
-        // UFO bonus row
         pixelArt16(Self.ufoArt, bits: 12, x: cx-90, y: H*0.78, s: 2.5, SIMD4(1,0.2,0.8,1), to: &arr)
         drawText("= ??? PTS", x: cx-20, y: H*0.78+6, s: 2, SIMD4(1,0.2,0.8,1), to: &arr)
 
-        // Blinking prompt
         if Int(game.time*2) & 1 == 0 {
             #if os(iOS)
             let prompt = "TAP TO PLAY"
@@ -397,7 +444,7 @@ class Renderer: NSObject, MTKViewDelegate {
     }
 
     func drawGameOver(to arr: inout [SpriteVertex]) {
-        let cx = logicalSize.x/2; let H = logicalSize.y
+        let cx = Renderer.gameW/2; let H = Renderer.gameH
         let pulse = 0.6 + 0.4*sin(game.time*4)
         drawTextC("GAME OVER", cx: cx, y: H*0.33, s: 5.5, SIMD4(1,0.2,0.2,Float(pulse)), to: &arr)
         drawTextC("SCORE:\(game.score)", cx: cx, y: H*0.52, s: 3, SIMD4(1,0.8,0.2,1), to: &arr)
@@ -411,7 +458,7 @@ class Renderer: NSObject, MTKViewDelegate {
     }
 
     func drawLevelBanner(to arr: inout [SpriteVertex]) {
-        let cx = logicalSize.x/2; let H = logicalSize.y
+        let cx = Renderer.gameW/2; let H = Renderer.gameH
         let pulse = 0.7 + 0.3*sin(game.time*5)
         drawTextC("LEVEL \(game.level)", cx: cx, y: H*0.38, s: 5.5, SIMD4(0.3,1,0.5,Float(pulse)), to: &arr)
         drawTextC("SCORE:\(game.score)", cx: cx, y: H*0.56, s: 3, SIMD4(1,0.8,0.2,1), to: &arr)
@@ -419,7 +466,9 @@ class Renderer: NSObject, MTKViewDelegate {
 
     // MARK: - MTKViewDelegate
 
-    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
+    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
+        viewSize = SIMD2(Float(size.width), Float(size.height))
+    }
 
     func draw(in view: MTKView) {
         let now = CACurrentMediaTime()
@@ -430,8 +479,12 @@ class Renderer: NSObject, MTKViewDelegate {
         normalVerts.removeAll(keepingCapacity: true)
         additiveVerts.removeAll(keepingCapacity: true)
 
-        drawStars(to: &normalVerts)
+        // --- Phase 1: full-screen background in drawable space (not transformed) ---
+        drawBackground(to: &normalVerts)
+        let bgNormal   = normalVerts.count
+        let bgAdditive = additiveVerts.count
 
+        // --- Phase 2: game content in logical game space (0..800, 0..600) ---
         switch game.phase {
         case .splash:
             drawSplash(to: &normalVerts)
@@ -461,17 +514,30 @@ class Renderer: NSObject, MTKViewDelegate {
             drawGameOver(to: &normalVerts)
         }
 
-        // Screen flash
+        // Screen flash (game space — will be scaled with everything else)
         if game.screenFlash > 0 {
             var fc = game.screenFlashColor; fc.w = game.screenFlash * 0.35
-            quad(x: 0, y: 0, w: logicalSize.x, h: logicalSize.y, fc, to: &additiveVerts)
+            quad(x: 0, y: 0, w: Renderer.gameW, h: Renderer.gameH, fc, to: &additiveVerts)
         }
 
+        // --- Phase 3: apply letterbox transform to game content only ---
+        let s = gameScale; let off = gameOffset
+        for i in bgNormal..<normalVerts.count {
+            normalVerts[i].position = normalVerts[i].position * s + off
+        }
+        for i in bgAdditive..<additiveVerts.count {
+            additiveVerts[i].position = additiveVerts[i].position * s + off
+        }
+
+        // --- Phase 4: draw border around game area (drawable space, after transform) ---
+        drawGameBorder(to: &normalVerts)
+
+        // --- Submit ---
         guard let rpd = view.currentRenderPassDescriptor,
               let cb  = commandQueue.makeCommandBuffer(),
               let enc = cb.makeRenderCommandEncoder(descriptor: rpd) else { return }
 
-        var uniforms = GameUniforms(resolution: logicalSize, time: game.time, padding: 0)
+        var uniforms = GameUniforms(resolution: viewSize, time: game.time, padding: 0)
 
         func submit(_ verts: [SpriteVertex], gpuBuf: MTLBuffer, pipeline: MTLRenderPipelineState) {
             guard !verts.isEmpty else { return }
@@ -497,12 +563,9 @@ class Renderer: NSObject, MTKViewDelegate {
         let i = Int(h * 6); let f = h * 6 - Float(i)
         let p = v*(1-s), q = v*(1-f*s), t = v*(1-(1-f)*s)
         switch i % 6 {
-        case 0: return SIMD4(v,t,p,1)
-        case 1: return SIMD4(q,v,p,1)
-        case 2: return SIMD4(p,v,t,1)
-        case 3: return SIMD4(p,q,v,1)
-        case 4: return SIMD4(t,p,v,1)
-        default: return SIMD4(v,p,q,1)
+        case 0: return SIMD4(v,t,p,1); case 1: return SIMD4(q,v,p,1)
+        case 2: return SIMD4(p,v,t,1); case 3: return SIMD4(p,q,v,1)
+        case 4: return SIMD4(t,p,v,1); default: return SIMD4(v,p,q,1)
         }
     }
 }

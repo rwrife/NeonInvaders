@@ -61,8 +61,8 @@ struct PowerUp {
 struct Shield {
     var position: SIMD2<Float>
     var pixels: [[Bool]]
-    static let cols = 22
-    static let rows = 14
+    static let cols = 16
+    static let rows = 10
     static let pixelSize: Float = 3.5
 }
 
@@ -80,18 +80,18 @@ struct HighScore {
 
 class GameEngine {
 
-    // Game world dimensions (logical pixels)
-    let W: Float = 800
-    let H: Float = 600
+    // Portrait game world: narrower and taller
+    let W: Float = 400
+    let H: Float = 780
     let alienCols = 11
     let alienRows = 5
-    let alienW: Float = 34
-    let alienH: Float = 24
-    let alienGapX: Float = 14
-    let alienGapY: Float = 14
-    let playerSpeed: Float = 220
-    let bulletSpeed: Float = 380
-    let alienBulletSpeed: Float = 170
+    let alienW: Float = 26
+    let alienH: Float = 18
+    let alienGapX: Float = 8
+    let alienGapY: Float = 10
+    let playerSpeed: Float = 200
+    let bulletSpeed: Float = 400
+    let alienBulletSpeed: Float = 175
 
     var phase: GamePhase = .splash
     var score: Int = 0
@@ -105,7 +105,7 @@ class GameEngine {
 
     var aliens: [Alien] = []
     var formationX: Float = 0
-    var formationVelX: Float = 40
+    var formationVelX: Float = 35
     var alienAnimTimer: Float = 0
     var alienAnimFrame: Int = 0
 
@@ -168,45 +168,51 @@ class GameEngine {
     }
 
     func setupLevel() {
-        player = GameEntity(position: SIMD2(W/2, H-55), size: SIMD2(42, 22), color: SIMD4(0.2, 1, 0.4, 1))
+        player = GameEntity(position: SIMD2(W/2, H - 58), size: SIMD2(36, 20), color: SIMD4(0.2, 1, 0.4, 1))
         playerAlive = true; playerDeathTimer = 0
         bullets.removeAll(); powerUps.removeAll(); particles.removeAll()
-        spreadShot = false; rapidFire = false; hasShield = false; activePowerUp = nil; powerUpTimer = 0
+        spreadShot = false; rapidFire = false; hasShield = false
+        activePowerUp = nil; powerUpTimer = 0
         setupAliens()
         setupShields()
-        ufo = UFO(entity: GameEntity(position: SIMD2(-60, 48), size: SIMD2(44, 20), color: SIMD4(1, 0.2, 0.8, 1)),
-                  velocity: SIMD2(130, 0), points: 150)
+        ufo = UFO(
+            entity: GameEntity(position: SIMD2(-60, 48), size: SIMD2(40, 18), color: SIMD4(1, 0.2, 0.8, 1)),
+            velocity: SIMD2(120, 0), points: 150)
         ufoSpawnTimer = Float.random(in: 15...30)
         formationX = 0
-        formationVelX = 40 + Float(level - 1) * 7
+        formationVelX = 35 + Float(level - 1) * 6
     }
 
     func setupAliens() {
         aliens.removeAll()
-        let startX: Float = 90
-        let startY: Float = 95
+        // Centre the 11-column grid in the 400-wide game area
+        // total grid width = 11*alienW + 10*alienGapX = 286+80 = 366
+        let startX: Float = (W - (Float(alienCols) * alienW + Float(alienCols - 1) * alienGapX)) / 2
+        let startY: Float = 85
         for row in 0..<alienRows {
             for col in 0..<alienCols {
                 let (type, color): (AlienType, SIMD4<Float>) = {
-                    if row == 0 { return (.squid, SIMD4(0.5, 0.5, 1, 1)) }
-                    else if row < 3 { return (.crab, SIMD4(0.3, 1, 1, 1)) }
-                    else { return (.octopus, SIMD4(0.9, 0.4, 1, 1)) }
+                    if row == 0 { return (.squid,   SIMD4(0.5, 0.5, 1.0, 1)) }
+                    if row < 3  { return (.crab,    SIMD4(0.3, 1.0, 1.0, 1)) }
+                    else        { return (.octopus, SIMD4(0.9, 0.4, 1.0, 1)) }
                 }()
                 let pos = SIMD2(startX + Float(col) * (alienW + alienGapX),
-                                startY + Float(row) * (alienH + alienGapY))
-                let e = GameEntity(position: pos, size: SIMD2(alienW, alienH), color: color)
-                aliens.append(Alien(entity: e, type: type, shootTimer: Float.random(in: 0.5...3)))
+                                startY  + Float(row) * (alienH + alienGapY))
+                aliens.append(Alien(entity: GameEntity(position: pos, size: SIMD2(alienW, alienH), color: color),
+                                    type: type, shootTimer: Float.random(in: 0.5...3)))
             }
         }
     }
 
     func setupShields() {
         shields.removeAll()
+        let shieldW = Float(Shield.cols) * Shield.pixelSize
         for i in 0..<4 {
-            let x = W / 5 * Float(i + 1) - Float(Shield.cols) * Shield.pixelSize / 2
+            let cx = W / 5 * Float(i + 1)
             var pixels = [[Bool]](repeating: [Bool](repeating: true, count: Shield.cols), count: Shield.rows)
-            for r in 0..<5 { for c in 7..<15 { pixels[Shield.rows - 1 - r][c] = false } }
-            shields.append(Shield(position: SIMD2(x, H - 155), pixels: pixels))
+            // carve arch at bottom centre
+            for r in 0..<4 { for c in 5..<11 { pixels[Shield.rows - 1 - r][c] = false } }
+            shields.append(Shield(position: SIMD2(cx - shieldW/2, H - 160), pixels: pixels))
         }
     }
 
@@ -232,7 +238,7 @@ class GameEngine {
             if playerDeathTimer <= 0 {
                 lives -= 1
                 if lives <= 0 { phase = .gameOver; saveHighScore() }
-                else { playerAlive = true; player.position = SIMD2(W/2, H-55) }
+                else { playerAlive = true; player.position = SIMD2(W/2, H - 58) }
             }
         } else {
             updatePlayer(dt: dt)
@@ -251,7 +257,7 @@ class GameEngine {
         if aliens.filter({ $0.entity.alive }).isEmpty {
             level += 1; levelTransitionTimer = 2.5; phase = .levelTransition
             flashScreen(SIMD4(1, 1, 0.5, 1))
-            for _ in 0..<80 { spawnParticle(at: SIMD2(Float.random(in: 0...W), Float.random(in: 0...H*0.6)), color: randomNeon(), speed: 200) }
+            for _ in 0..<80 { spawnParticle(at: SIMD2(Float.random(in: 0...W), Float.random(in: 0...H*0.6)), color: randomNeon(), speed: 180) }
         }
     }
 
@@ -259,7 +265,7 @@ class GameEngine {
         var vx: Float = 0
         if moveLeft  { vx -= playerSpeed }
         if moveRight { vx += playerSpeed }
-        player.position.x = max(player.size.x/2 + 10, min(W - player.size.x/2 - 10, player.position.x + vx * dt))
+        player.position.x = max(player.size.x/2 + 6, min(W - player.size.x/2 - 6, player.position.x + vx * dt))
 
         let fireJust = firePressed && !firePressedPrev
         firePressedPrev = firePressed
@@ -272,12 +278,15 @@ class GameEngine {
         if spreadShot {
             for angle: Float in [-.pi/2, -.pi/2 - 0.28, -.pi/2 + 0.28] {
                 let vel = SIMD2(cos(angle), sin(angle)) * bulletSpeed
-                bullets.append(Bullet(entity: GameEntity(position: pos, size: SIMD2(4, 14), color: SIMD4(0.3, 1, 0.3, 1)), velocity: vel, isPlayerBullet: true))
+                bullets.append(Bullet(entity: GameEntity(position: pos, size: SIMD2(3, 12), color: SIMD4(0.3, 1, 0.3, 1)),
+                                      velocity: vel, isPlayerBullet: true))
             }
         } else if activePowerUp == .laser {
-            bullets.append(Bullet(entity: GameEntity(position: pos, size: SIMD2(5, 30), color: SIMD4(1, 0.2, 0.2, 1)), velocity: SIMD2(0, -bulletSpeed * 1.6), isPlayerBullet: true, isPowerful: true))
+            bullets.append(Bullet(entity: GameEntity(position: pos, size: SIMD2(4, 28), color: SIMD4(1, 0.2, 0.2, 1)),
+                                  velocity: SIMD2(0, -bulletSpeed * 1.6), isPlayerBullet: true, isPowerful: true))
         } else {
-            bullets.append(Bullet(entity: GameEntity(position: pos, size: SIMD2(4, 16), color: SIMD4(0.3, 1, 0.3, 1)), velocity: SIMD2(0, -bulletSpeed), isPlayerBullet: true))
+            bullets.append(Bullet(entity: GameEntity(position: pos, size: SIMD2(3, 14), color: SIMD4(0.3, 1, 0.3, 1)),
+                                  velocity: SIMD2(0, -bulletSpeed), isPlayerBullet: true))
         }
     }
 
@@ -287,20 +296,19 @@ class GameEngine {
         let alive = aliens.filter { $0.entity.alive }
         guard !alive.isEmpty else { return }
 
-        let speedMult: Float = 1 + (Float(alienCols * alienRows) - Float(alive.count)) / Float(alienCols * alienRows) * 3.0
+        let speedMult: Float = 1 + (Float(alienCols * alienRows) - Float(alive.count)) / Float(alienCols * alienRows) * 3.2
         formationX += formationVelX * speedMult * dt
 
         let left  = alive.map { $0.entity.position.x + formationX }.min()!
         let right = alive.map { $0.entity.position.x + formationX + $0.entity.size.x }.max()!
-        if right >= W - 15 || left <= 15 {
+        if right >= W - 12 || left <= 12 {
             formationVelX = -formationVelX
-            for i in 0..<aliens.count { aliens[i].entity.position.y += 18 }
+            for i in 0..<aliens.count { aliens[i].entity.position.y += 16 }
         }
 
-        let maxY = alive.map { $0.entity.position.y + $0.entity.size.y }.max()!
-        if maxY >= H - 100 { killPlayer() }
+        if alive.map({ $0.entity.position.y + $0.entity.size.y }).max()! >= H - 110 { killPlayer() }
 
-        let shootDelay = max(0.25, 1.5 - Float(level - 1) * 0.1)
+        let shootDelay = max(0.2, 1.4 - Float(level - 1) * 0.1)
         for i in 0..<aliens.count {
             guard aliens[i].entity.alive else { continue }
             aliens[i].animFrame = alienAnimFrame
@@ -309,14 +317,12 @@ class GameEngine {
                 aliens[i].shootTimer = Float.random(in: shootDelay...shootDelay * 3)
                 let col = i % alienCols; let row = i / alienCols
                 var lowest = true
-                for r in (row+1)..<alienRows {
-                    if aliens[r * alienCols + col].entity.alive { lowest = false; break }
-                }
+                for r in (row+1)..<alienRows where aliens[r * alienCols + col].entity.alive { lowest = false; break }
                 if lowest {
                     let ap = SIMD2(aliens[i].entity.position.x + formationX + aliens[i].entity.size.x/2,
                                    aliens[i].entity.position.y + aliens[i].entity.size.y)
-                    bullets.append(Bullet(entity: GameEntity(position: ap, size: SIMD2(4, 12), color: SIMD4(1, 0.5, 0.1, 1)),
-                                         velocity: SIMD2(Float.random(in: -25...25), alienBulletSpeed), isPlayerBullet: false))
+                    bullets.append(Bullet(entity: GameEntity(position: ap, size: SIMD2(3, 10), color: SIMD4(1, 0.5, 0.1, 1)),
+                                         velocity: SIMD2(Float.random(in: -20...20), alienBulletSpeed), isPlayerBullet: false))
                 }
             }
         }
@@ -341,15 +347,15 @@ class GameEngine {
     func updateUFO(dt: Float) {
         if ufo.active {
             ufo.entity.position.x += ufo.velocity.x * dt
-            if ufo.entity.position.x > W + 80 || ufo.entity.position.x < -80 {
+            if ufo.entity.position.x > W + 70 || ufo.entity.position.x < -70 {
                 ufo.active = false; ufoSpawnTimer = Float.random(in: 15...30)
             }
         } else {
             ufoSpawnTimer -= dt
             if ufoSpawnTimer <= 0 {
                 let goRight = Bool.random()
-                ufo.entity.position = SIMD2(goRight ? -60 : W + 60, 46)
-                ufo.velocity.x = goRight ? 130 : -130
+                ufo.entity.position = SIMD2(goRight ? -60 : W + 60, 48)
+                ufo.velocity.x = goRight ? 120 : -120
                 ufo.points = [50, 100, 150, 200, 300].randomElement()!
                 ufo.active = true
             }
@@ -384,9 +390,7 @@ class GameEngine {
                     if hasShield {
                         hasShield = false; activePowerUp = nil
                         spawnExplosion(at: player.position, color: SIMD4(0.4, 0.8, 1, 1), count: 16)
-                    } else {
-                        killPlayer()
-                    }
+                    } else { killPlayer() }
                 }
                 damageBulletVsShields(bi: bi)
             }
@@ -439,7 +443,7 @@ class GameEngine {
         flashScreen(SIMD4(color.x * 0.3, color.y * 0.3, color.z * 0.3, 1))
         if Float.random(in: 0...1) < 0.14 {
             let t = PowerUpType.allCases.randomElement()!
-            powerUps.append(PowerUp(entity: GameEntity(position: pos, size: SIMD2(18, 18), color: powerUpColor(t)), type: t))
+            powerUps.append(PowerUp(entity: GameEntity(position: pos, size: SIMD2(16, 16), color: powerUpColor(t)), type: t))
         }
     }
 
@@ -448,10 +452,7 @@ class GameEngine {
         playerAlive = false; playerDeathTimer = 2.0
         spawnExplosion(at: player.position, color: SIMD4(0.2, 1, 0.4, 1), count: 50)
         flashScreen(SIMD4(0.5, 1, 0.5, 1))
-        // Mark dead rather than removeAll — safe to call inside a bullets iteration loop
-        for i in 0..<bullets.count where bullets[i].isPlayerBullet {
-            bullets[i].entity.alive = false
-        }
+        for i in 0..<bullets.count where bullets[i].isPlayerBullet { bullets[i].entity.alive = false }
     }
 
     func collectPowerUp(_ t: PowerUpType) {
@@ -477,7 +478,7 @@ class GameEngine {
     }
 
     func spawnExplosion(at pos: SIMD2<Float>, color: SIMD4<Float>, count: Int) {
-        for _ in 0..<count { spawnParticle(at: pos, color: jitter(color), speed: 160) }
+        for _ in 0..<count { spawnParticle(at: pos, color: jitter(color), speed: 150) }
     }
 
     func updateParticles(dt: Float) {
@@ -514,8 +515,8 @@ class GameEngine {
     }
 
     func randomNeon() -> SIMD4<Float> {
-        [[SIMD4<Float>]([ SIMD4(0.2,1,1,1), SIMD4(1,0.2,1,1), SIMD4(0.2,1,0.4,1),
-                          SIMD4(1,0.8,0.2,1), SIMD4(0.5,0.5,1,1), SIMD4(1,0.3,0.3,1)])].first!.randomElement()!
+        [SIMD4(0.2,1,1,1), SIMD4(1,0.2,1,1), SIMD4(0.2,1,0.4,1),
+         SIMD4(1,0.8,0.2,1), SIMD4(0.5,0.5,1,1), SIMD4(1,0.3,0.3,1)].randomElement()!
     }
 
     // MARK: - Input
