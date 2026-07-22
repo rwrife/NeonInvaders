@@ -16,6 +16,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Assets.xcassets,
+				AudioManager.swift,
 				GameEngine.swift,
 				Renderer.swift,
 				Shaders.metal,
@@ -33,6 +34,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Assets.xcassets,
+				AudioManager.swift,
 				GameEngine.swift,
 				Renderer.swift,
 				Shaders.metal,

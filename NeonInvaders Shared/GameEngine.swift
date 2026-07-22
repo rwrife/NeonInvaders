@@ -170,6 +170,7 @@ class GameEngine {
     func startGame() {
         score = 0; lives = 3; level = 1
         phase = .playing
+        AudioManager.shared.start()
         setupLevel()
     }
 
@@ -304,6 +305,7 @@ class GameEngine {
 
     func fireBullet() {
         let pos = player.position - SIMD2(0, player.size.y/2)
+        AudioManager.shared.play(.shoot)
         if spreadShot {
             for angle: Float in [-.pi/2, -.pi/2 - 0.28, -.pi/2 + 0.28] {
                 let vel = SIMD2(cos(angle), sin(angle)) * bulletSpeed
@@ -439,6 +441,7 @@ class GameEngine {
                 }
                 if ufo.active, br.intersects(erect(ufo.entity)) {
                     score += ufo.points; ufo.active = false; ufoSpawnTimer = Float.random(in: 15...30)
+                    AudioManager.shared.play(.explosion)
                     spawnExplosion(at: ufo.entity.position, color: SIMD4(1, 0.2, 0.8, 1), count: 24)
                     flashScreen(SIMD4(1, 0.5, 0.5, 1))
                     bullets[bi].entity.alive = false
@@ -471,6 +474,7 @@ class GameEngine {
             for i in 0..<aliens.count where aliens[i].entity.alive && aliens[i].isDiving {
                 if pr.intersects(erect(aliens[i].entity)) {
                     aliens[i].entity.alive = false
+                    AudioManager.shared.play(.explosion)
                     spawnExplosion(at: aliens[i].entity.position, color: aliens[i].entity.color, count: 16)
                     if hasShield {
                         hasShield = false; activePowerUp = nil
@@ -523,6 +527,7 @@ class GameEngine {
 
         let color = aliens[i].entity.color
         aliens[i].entity.alive = false
+        AudioManager.shared.play(.explosion)
         let pts = [10, 20, 30][aliens[i].type.rawValue] * level
         score += pts
         spawnExplosion(at: pos, color: color, count: 18)
@@ -536,6 +541,7 @@ class GameEngine {
     func killPlayer() {
         guard playerAlive else { return }
         playerAlive = false; playerDeathTimer = 2.0
+        AudioManager.shared.play(.playerExplosion)
         spawnExplosion(at: player.position, color: SIMD4(0.2, 1, 0.4, 1), count: 50)
         flashScreen(SIMD4(0.5, 1, 0.5, 1))
         for i in 0..<bullets.count where bullets[i].isPlayerBullet { bullets[i].entity.alive = false }
