@@ -2,52 +2,34 @@
 //  Shaders.metal
 //  NeonInvaders Shared
 //
-//  Created by Ryan Rife on 7/21/26.
-//
-
-// File for Metal kernel and shader functions
 
 #include <metal_stdlib>
 #include <simd/simd.h>
-
-// Including header shared between this Metal shader code and Swift/C code executing Metal API commands
 #import "ShaderTypes.h"
 
 using namespace metal;
 
-typedef struct
-{
-    float3 position [[attribute(VertexAttributePosition)]];
-    float2 texCoord [[attribute(VertexAttributeTexcoord)]];
-} Vertex;
-
-typedef struct
-{
+typedef struct {
     float4 position [[position]];
-    float2 texCoord;
-} ColorInOut;
+    float4 color;
+} VertexOut;
 
-vertex ColorInOut vertexShader(Vertex in [[stage_in]],
-                               constant Uniforms & uniforms [[ buffer(BufferIndexUniforms) ]])
+vertex VertexOut spriteVertex(
+    uint vertexID [[vertex_id]],
+    constant SpriteVertex* vertices [[buffer(BufferIndexVertices)]],
+    constant GameUniforms& uniforms [[buffer(BufferIndexUniforms)]])
 {
-    ColorInOut out;
-
-    float4 position = float4(in.position, 1.0);
-    out.position = uniforms.projectionMatrix * uniforms.modelViewMatrix * position;
-    out.texCoord = in.texCoord;
-
+    VertexOut out;
+    SpriteVertex v = vertices[vertexID];
+    float2 ndc;
+    ndc.x = (v.position.x / uniforms.resolution.x) * 2.0 - 1.0;
+    ndc.y = 1.0 - (v.position.y / uniforms.resolution.y) * 2.0;
+    out.position = float4(ndc, 0.0, 1.0);
+    out.color = v.color;
     return out;
 }
 
-fragment float4 fragmentShader(ColorInOut in [[stage_in]],
-                               constant Uniforms & uniforms [[ buffer(BufferIndexUniforms) ]],
-                               texture2d<half> colorMap     [[ texture(TextureIndexColor) ]])
+fragment float4 spriteFragment(VertexOut in [[stage_in]])
 {
-    constexpr sampler colorSampler(mip_filter::linear,
-                                   mag_filter::linear,
-                                   min_filter::linear);
-
-    half4 colorSample   = colorMap.sample(colorSampler, in.texCoord.xy);
-
-    return float4(colorSample);
+    return in.color;
 }

@@ -2,13 +2,10 @@
 //  GameViewController.swift
 //  NeonInvaders macOS
 //
-//  Created by Ryan Rife on 7/21/26.
-//
 
 import Cocoa
 import MetalKit
 
-// Our macOS specific view controller
 class GameViewController: NSViewController {
 
     var renderer: Renderer!
@@ -18,27 +15,61 @@ class GameViewController: NSViewController {
         super.viewDidLoad()
 
         guard let mtkView = self.view as? MTKView else {
-            print("View attached to GameViewController is not an MTKView")
-            return
+            print("View is not an MTKView"); return
         }
+        self.mtkView = mtkView
 
-        // Select the device to render with.  We choose the default device
-        guard let defaultDevice = MTLCreateSystemDefaultDevice() else {
-            print("Metal is not supported on this device")
-            return
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            print("Metal not supported"); return
         }
+        mtkView.device = device
 
-        mtkView.device = defaultDevice
-
-        guard let newRenderer = Renderer(metalKitView: mtkView) else {
-            print("Renderer cannot be initialized")
-            return
+        guard let r = Renderer(metalKitView: mtkView) else {
+            print("Renderer failed"); return
         }
-
-        renderer = newRenderer
-
+        renderer = r
         renderer.mtkView(mtkView, drawableSizeWillChange: mtkView.drawableSize)
-
         mtkView.delegate = renderer
+
+        // Accept key events
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            self?.handleKeyDown(event); return event
+        }
+        NSEvent.addLocalMonitorForEvents(matching: .keyUp) { [weak self] event in
+            self?.handleKeyUp(event); return event
+        }
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        view.window?.makeFirstResponder(self)
+    }
+
+    // MARK: - Keyboard
+
+    private func handleKeyDown(_ event: NSEvent) {
+        let g = renderer.game
+        switch event.keyCode {
+        case 0x7B, 0x00: g.moveLeft  = true   // left arrow, A
+        case 0x7C, 0x02: g.moveRight = true   // right arrow, D
+        case 0x31:                             // space
+            switch g.phase {
+            case .splash, .gameOver: g.handleTap()
+            case .playing:           g.firePressed = true
+            default: break
+            }
+        case 0x35: break  // escape – ignore
+        default: break
+        }
+    }
+
+    private func handleKeyUp(_ event: NSEvent) {
+        let g = renderer.game
+        switch event.keyCode {
+        case 0x7B, 0x00: g.moveLeft  = false
+        case 0x7C, 0x02: g.moveRight = false
+        case 0x31:        g.firePressed = false
+        default: break
+        }
     }
 }
