@@ -33,6 +33,10 @@ struct Alien {
     var type: AlienType
     var animFrame: Int = 0
     var shootTimer: Float
+    var hp: Int = 1
+    var isDiving: Bool = false
+    var diveVel: SIMD2<Float> = .zero
+    var diveTimer: Float = Float.random(in: 2...6)
 }
 
 struct Bullet {
@@ -61,9 +65,9 @@ struct PowerUp {
 struct Shield {
     var position: SIMD2<Float>
     var pixels: [[Bool]]
-    static let cols = 16
-    static let rows = 10
-    static let pixelSize: Float = 3.5
+    static let cols = 20
+    static let rows = 12
+    static let pixelSize: Float = 4.0
 }
 
 struct UFO {
@@ -83,12 +87,12 @@ class GameEngine {
     // Portrait game world: narrower and taller
     let W: Float = 400
     let H: Float = 780
-    let alienCols = 11
-    let alienRows = 5
-    let alienW: Float = 26
-    let alienH: Float = 18
-    let alienGapX: Float = 8
-    let alienGapY: Float = 10
+    let alienCols = 4
+    let alienRows = 3
+    let alienW: Float = 40
+    let alienH: Float = 28
+    let alienGapX: Float = 22
+    let alienGapY: Float = 20
     let playerSpeed: Float = 200
     let bulletSpeed: Float = 400
     let alienBulletSpeed: Float = 175
@@ -97,6 +101,8 @@ class GameEngine {
     var score: Int = 0
     var lives: Int = 3
     var level: Int = 1
+    var wave: Int = 1
+    var isLevelTransition = false
     var highScores: [HighScore] = []
 
     var player: GameEntity!
@@ -170,36 +176,50 @@ class GameEngine {
     func setupLevel() {
         player = GameEntity(position: SIMD2(W/2, H - 58), size: SIMD2(36, 20), color: SIMD4(0.2, 1, 0.4, 1))
         playerAlive = true; playerDeathTimer = 0
+        setupShields()
+        wave = 1
+        setupWave()
+    }
+
+    // Sets up a single wave (aliens, UFO, projectiles) while shields persist.
+    func setupWave() {
+        player.position = SIMD2(W/2, H - 58)
+        playerAlive = true; playerDeathTimer = 0
         bullets.removeAll(); powerUps.removeAll(); particles.removeAll()
         spreadShot = false; rapidFire = false; hasShield = false
         activePowerUp = nil; powerUpTimer = 0
         setupAliens()
-        setupShields()
+        // Wave 3 guarantees an early UFO pass; other waves are randomised.
+        let ufoDelay: Float = wave == 3 ? Float.random(in: 3...6) : Float.random(in: 15...30)
         ufo = UFO(
             entity: GameEntity(position: SIMD2(-60, 48), size: SIMD2(40, 18), color: SIMD4(1, 0.2, 0.8, 1)),
             velocity: SIMD2(120, 0), points: 150)
-        ufoSpawnTimer = Float.random(in: 15...30)
+        ufoSpawnTimer = ufoDelay
         formationX = 0
-        formationVelX = 35 + Float(level - 1) * 6
+        var baseVel = 35 + Float(level - 1) * 6
+        if wave == 2 { baseVel *= 1.5 }   // Swarm: faster
+        if wave == 3 { baseVel *= 1.2 }   // Onslaught: brisk
+        formationVelX = baseVel
     }
 
     func setupAliens() {
         aliens.removeAll()
-        // Centre the 11-column grid in the 400-wide game area
-        // total grid width = 11*alienW + 10*alienGapX = 286+80 = 366
+        // Centre the grid in the narrow game area.
         let startX: Float = (W - (Float(alienCols) * alienW + Float(alienCols - 1) * alienGapX)) / 2
-        let startY: Float = 85
+        let startY: Float = 100
+        let alienHP = wave == 3 ? 2 : 1   // Onslaught: tougher aliens
         for row in 0..<alienRows {
             for col in 0..<alienCols {
                 let (type, color): (AlienType, SIMD4<Float>) = {
                     if row == 0 { return (.squid,   SIMD4(0.5, 0.5, 1.0, 1)) }
-                    if row < 3  { return (.crab,    SIMD4(0.3, 1.0, 1.0, 1)) }
+                    if row == 1 { return (.crab,    SIMD4(0.3, 1.0, 1.0, 1)) }
                     else        { return (.octopus, SIMD4(0.9, 0.4, 1.0, 1)) }
                 }()
                 let pos = SIMD2(startX + Float(col) * (alienW + alienGapX),
                                 startY  + Float(row) * (alienH + alienGapY))
                 aliens.append(Alien(entity: GameEntity(position: pos, size: SIMD2(alienW, alienH), color: color),
-                                    type: type, shootTimer: Float.random(in: 0.5...3)))
+                                    type: type, shootTimer: Float.random(in: 0.5...3), hp: alienHP,
+                                    diveTimer: Float.random(in: 2...6)))
             }
         }
     }
@@ -207,12 +227,12 @@ class GameEngine {
     func setupShields() {
         shields.removeAll()
         let shieldW = Float(Shield.cols) * Shield.pixelSize
-        for i in 0..<4 {
-            let cx = W / 5 * Float(i + 1)
+        for i in 0..<3 {
+            let cx = W / 4 * Float(i + 1)
             var pixels = [[Bool]](repeating: [Bool](repeating: true, count: Shield.cols), count: Shield.rows)
             // carve arch at bottom centre
-            for r in 0..<4 { for c in 5..<11 { pixels[Shield.rows - 1 - r][c] = false } }
-            shields.append(Shield(position: SIMD2(cx - shieldW/2, H - 160), pixels: pixels))
+            for r in 0..<5 { for c in 6..<14 { pixels[Shield.rows - 1 - r][c] = false } }
+            shields.append(Shield(position: SIMD2(cx - shieldW/2, H - 200), pixels: pixels))
         }
     }
 
@@ -226,7 +246,10 @@ class GameEngine {
         case .playing: updatePlaying(dt: dt)
         case .levelTransition:
             levelTransitionTimer -= dt
-            if levelTransitionTimer <= 0 { setupLevel(); phase = .playing }
+            if levelTransitionTimer <= 0 {
+                if isLevelTransition { setupLevel() } else { setupWave() }
+                phase = .playing
+            }
         case .gameOver: break
         }
         updateParticles(dt: dt)
@@ -255,7 +278,12 @@ class GameEngine {
         }
 
         if aliens.filter({ $0.entity.alive }).isEmpty {
-            level += 1; levelTransitionTimer = 2.5; phase = .levelTransition
+            if wave < 3 {
+                wave += 1; isLevelTransition = false; levelTransitionTimer = 2.0
+            } else {
+                level += 1; wave = 1; isLevelTransition = true; levelTransitionTimer = 2.5
+            }
+            phase = .levelTransition
             flashScreen(SIMD4(1, 1, 0.5, 1))
             for _ in 0..<80 { spawnParticle(at: SIMD2(Float.random(in: 0...W), Float.random(in: 0...H*0.6)), color: randomNeon(), speed: 180) }
         }
@@ -293,31 +321,62 @@ class GameEngine {
     func updateAliens(dt: Float) {
         alienAnimTimer += dt
         if alienAnimTimer > 0.45 { alienAnimTimer = 0; alienAnimFrame = 1 - alienAnimFrame }
-        let alive = aliens.filter { $0.entity.alive }
-        guard !alive.isEmpty else { return }
 
-        let speedMult: Float = 1 + (Float(alienCols * alienRows) - Float(alive.count)) / Float(alienCols * alienRows) * 3.2
-        formationX += formationVelX * speedMult * dt
-
-        let left  = alive.map { $0.entity.position.x + formationX }.min()!
-        let right = alive.map { $0.entity.position.x + formationX + $0.entity.size.x }.max()!
-        if right >= W - 12 || left <= 12 {
-            formationVelX = -formationVelX
-            for i in 0..<aliens.count { aliens[i].entity.position.y += 16 }
+        // Diving aliens (wave 2) move independently of the formation.
+        for i in 0..<aliens.count where aliens[i].entity.alive && aliens[i].isDiving {
+            aliens[i].entity.position += aliens[i].diveVel * dt
+            aliens[i].animFrame = alienAnimFrame
+            if aliens[i].entity.position.y > H + 40 { aliens[i].entity.alive = false }
         }
 
-        if alive.map({ $0.entity.position.y + $0.entity.size.y }).max()! >= H - 110 { killPlayer() }
+        let formation = aliens.enumerated().filter { $0.element.entity.alive && !$0.element.isDiving }
+        guard !formation.isEmpty else { return }
 
-        let shootDelay = max(0.2, 1.4 - Float(level - 1) * 0.1)
+        let total = Float(alienCols * alienRows)
+        let aliveCount = Float(aliens.filter { $0.entity.alive }.count)
+        var speedMult: Float = 1 + (total - aliveCount) / total * 3.2
+        // Swarm wave: erratic horizontal speed.
+        if wave == 2 { speedMult *= 1.0 + 0.35 * sin(time * 3.5) }
+        formationX += formationVelX * speedMult * dt
+
+        let left  = formation.map { $0.element.entity.position.x + formationX }.min()!
+        let right = formation.map { $0.element.entity.position.x + formationX + $0.element.entity.size.x }.max()!
+        if right >= W - 12 || left <= 12 {
+            formationVelX = -formationVelX
+            for i in 0..<aliens.count where !aliens[i].isDiving { aliens[i].entity.position.y += 16 }
+        }
+
+        if formation.map({ $0.element.entity.position.y + $0.element.entity.size.y }).max()! >= H - 130 { killPlayer() }
+
+        // Wave 3 fires far more aggressively.
+        let fireScale: Float = wave == 3 ? 0.5 : 1.0
+        let shootDelay = max(0.15, (1.4 - Float(level - 1) * 0.1) * fireScale)
         for i in 0..<aliens.count {
-            guard aliens[i].entity.alive else { continue }
+            guard aliens[i].entity.alive, !aliens[i].isDiving else { continue }
             aliens[i].animFrame = alienAnimFrame
+
+            // Wave 2: occasionally break formation and dive at the player.
+            if wave == 2 {
+                aliens[i].diveTimer -= dt
+                if aliens[i].diveTimer <= 0 {
+                    aliens[i].diveTimer = Float.random(in: 3...7)
+                    if Float.random(in: 0...1) < 0.5 {
+                        aliens[i].entity.position.x += formationX
+                        aliens[i].isDiving = true
+                        let from = aliens[i].entity.position + aliens[i].entity.size / 2
+                        let dir = simd_normalize(player.position - from)
+                        aliens[i].diveVel = dir * 190
+                        continue
+                    }
+                }
+            }
+
             aliens[i].shootTimer -= dt
             if aliens[i].shootTimer <= 0 {
                 aliens[i].shootTimer = Float.random(in: shootDelay...shootDelay * 3)
                 let col = i % alienCols; let row = i / alienCols
                 var lowest = true
-                for r in (row+1)..<alienRows where aliens[r * alienCols + col].entity.alive { lowest = false; break }
+                for r in (row+1)..<alienRows where aliens[r * alienCols + col].entity.alive && !aliens[r * alienCols + col].isDiving { lowest = false; break }
                 if lowest {
                     let ap = SIMD2(aliens[i].entity.position.x + formationX + aliens[i].entity.size.x/2,
                                    aliens[i].entity.position.y + aliens[i].entity.size.y)
@@ -370,7 +429,7 @@ class GameEngine {
             if bullets[bi].isPlayerBullet {
                 for ai in 0..<aliens.count {
                     guard aliens[ai].entity.alive else { continue }
-                    var ae = aliens[ai].entity; ae.position.x += formationX
+                    var ae = aliens[ai].entity; if !aliens[ai].isDiving { ae.position.x += formationX }
                     if br.intersects(erect(ae)) {
                         killAlien(ai)
                         if !bullets[bi].isPowerful { bullets[bi].entity.alive = false }
@@ -405,6 +464,19 @@ class GameEngine {
                 spawnExplosion(at: powerUps[i].entity.position, color: SIMD4(1, 1, 0.3, 1), count: 20)
             }
         }
+
+        // Diving aliens crash into the player.
+        if playerAlive {
+            for i in 0..<aliens.count where aliens[i].entity.alive && aliens[i].isDiving {
+                if pr.intersects(erect(aliens[i].entity)) {
+                    aliens[i].entity.alive = false
+                    spawnExplosion(at: aliens[i].entity.position, color: aliens[i].entity.color, count: 16)
+                    if hasShield {
+                        hasShield = false; activePowerUp = nil
+                    } else { killPlayer() }
+                }
+            }
+        }
     }
 
     func damageBulletVsShields(bi: Int) {
@@ -434,7 +506,20 @@ class GameEngine {
     }
 
     func killAlien(_ i: Int) {
-        var pos = aliens[i].entity.position; pos.x += formationX; pos += aliens[i].entity.size / 2
+        var pos = aliens[i].entity.position
+        if !aliens[i].isDiving { pos.x += formationX }
+        pos += aliens[i].entity.size / 2
+
+        // Tougher (wave 3) aliens survive the first hit with a damage tint.
+        if aliens[i].hp > 1 {
+            aliens[i].hp -= 1
+            aliens[i].entity.color = SIMD4(min(1, aliens[i].entity.color.x + 0.4),
+                                           aliens[i].entity.color.y * 0.5,
+                                           aliens[i].entity.color.z * 0.5, 1)
+            spawnExplosion(at: pos, color: aliens[i].entity.color, count: 6)
+            return
+        }
+
         let color = aliens[i].entity.color
         aliens[i].entity.alive = false
         let pts = [10, 20, 30][aliens[i].type.rawValue] * level

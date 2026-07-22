@@ -32,8 +32,8 @@ class Renderer: NSObject, MTKViewDelegate {
     var safePaddingBottom: Float = 0
 
     // Logical game dimensions
-    static let gameW: Float = 800
-    static let gameH: Float = 600
+    static let gameW: Float = 400
+    static let gameH: Float = 780
 
     // Stars: normalized (0..1) positions so they always fill the drawable
     var stars: [(SIMD2<Float>, Float, Float)] = []  // normPos, brightness, twinkle
@@ -270,7 +270,7 @@ class Renderer: NSObject, MTKViewDelegate {
         let frames = Self.alienArt[alien.type]!
         let frame  = frames[alien.animFrame & 1]
         let sc = alien.entity.size.x / 8
-        let x  = alien.entity.position.x + game.formationX
+        let x  = alien.entity.position.x + (alien.isDiving ? 0 : game.formationX)
         let y  = alien.entity.position.y
         let c  = alien.entity.color
         pixelArt8(frame, x: x, y: y, s: sc, c, to: &arr)
@@ -366,6 +366,8 @@ class Renderer: NSObject, MTKViewDelegate {
         drawTextC("HI:\(hi)", cx: W/2, y: 8, s: 2, SIMD4(1,0.8,0.2,1), to: &arr)
         let lvl = "LVL:\(game.level)"
         drawText(lvl, x: W - textW(lvl, s: 2) - 10, y: 8, s: 2, SIMD4(0.6,0.6,1,1), to: &arr)
+        let wv = "WAVE \(game.wave)/3"
+        drawText(wv, x: W - textW(wv, s: 1.5) - 10, y: 24, s: 1.5, SIMD4(1,0.5,0.9,1), to: &arr)
 
         for i in 0..<game.lives {
             pixelArt16(Self.playerArt, bits: 9, x: 10 + Float(i)*22, y: H-20, s: 1.8, SIMD4(0.2,1,0.4,1), to: &arr)
@@ -393,7 +395,7 @@ class Renderer: NSObject, MTKViewDelegate {
 
     func drawSplash(to arr: inout [SpriteVertex]) {
         let W = Renderer.gameW, H = Renderer.gameH; let cx = W/2
-        let title = "NEON INVADERS"; let ts: Float = 4.5
+        let title = "NEON INVADERS"; let ts: Float = 3.5
         let tw = textW(title, s: ts)
         var tx = cx - tw/2
         for (i, ch) in title.enumerated() {
@@ -423,15 +425,16 @@ class Renderer: NSObject, MTKViewDelegate {
             (.crab,    SIMD4(0.3,1,1,1),    "= 20 PTS"),
             (.octopus, SIMD4(0.9,0.4,1,1),  "= 10 PTS"),
         ]
-        var dx: Float = cx - 185
         let af = Int(game.time*2) & 1
-        for (t, c, pts) in demos {
-            pixelArt8(Self.alienArt[t]![af], x: dx, y: H*0.70, s: 3, c, to: &arr)
-            drawText(pts, x: dx+32, y: H*0.70+8, s: 2, c, to: &arr)
-            dx += 130
+        for (i, demo) in demos.enumerated() {
+            let (t, c, pts) = demo
+            let dy = H*0.66 + Float(i)*32
+            pixelArt8(Self.alienArt[t]![af], x: cx-80, y: dy, s: 3, c, to: &arr)
+            drawText(pts, x: cx-40, y: dy+8, s: 2, c, to: &arr)
         }
-        pixelArt16(Self.ufoArt, bits: 12, x: cx-90, y: H*0.78, s: 2.5, SIMD4(1,0.2,0.8,1), to: &arr)
-        drawText("= ??? PTS", x: cx-20, y: H*0.78+6, s: 2, SIMD4(1,0.2,0.8,1), to: &arr)
+        let uy = H*0.66 + 3*32
+        pixelArt16(Self.ufoArt, bits: 12, x: cx-88, y: uy, s: 2.5, SIMD4(1,0.2,0.8,1), to: &arr)
+        drawText("= ??? PTS", x: cx-40, y: uy+6, s: 2, SIMD4(1,0.2,0.8,1), to: &arr)
 
         if Int(game.time*2) & 1 == 0 {
             #if os(iOS)
@@ -441,6 +444,9 @@ class Renderer: NSObject, MTKViewDelegate {
             #endif
             drawTextC(prompt, cx: cx, y: H*0.88, s: 2.5, SIMD4(0.3,1,0.3,1), to: &arr)
         }
+
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+        drawTextC("COPYRIGHT RYAN RIFE   V\(version)", cx: cx, y: H*0.95, s: 1.5, SIMD4(0.5,0.5,0.6,1), to: &arr)
     }
 
     func drawGameOver(to arr: inout [SpriteVertex]) {
@@ -460,8 +466,9 @@ class Renderer: NSObject, MTKViewDelegate {
     func drawLevelBanner(to arr: inout [SpriteVertex]) {
         let cx = Renderer.gameW/2; let H = Renderer.gameH
         let pulse = 0.7 + 0.3*sin(game.time*5)
-        drawTextC("LEVEL \(game.level)", cx: cx, y: H*0.38, s: 5.5, SIMD4(0.3,1,0.5,Float(pulse)), to: &arr)
-        drawTextC("SCORE:\(game.score)", cx: cx, y: H*0.56, s: 3, SIMD4(1,0.8,0.2,1), to: &arr)
+        let title = game.isLevelTransition ? "LEVEL \(game.level)" : "WAVE \(game.wave)"
+        drawTextC(title, cx: cx, y: H*0.38, s: 4, SIMD4(0.3,1,0.5,Float(pulse)), to: &arr)
+        drawTextC("SCORE:\(game.score)", cx: cx, y: H*0.50, s: 2.5, SIMD4(1,0.8,0.2,1), to: &arr)
     }
 
     // MARK: - MTKViewDelegate
