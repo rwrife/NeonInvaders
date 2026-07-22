@@ -374,8 +374,15 @@ class Renderer: NSObject, MTKViewDelegate {
         let sc = e.size.x / 12
         let x = e.position.x - e.size.x/2; let y = e.position.y - e.size.y/2
         pixelArt16(Self.ufoArt, bits: 12, x: x, y: y, s: sc, e.color, to: &arr)
-        var g = e.color; g.w = 0.3+0.2*sin(game.time*10)
-        quad(x: x-3, y: y-3, w: e.size.x+6, h: e.size.y+6, g, to: &additiveVerts)
+        // Soft radial aura instead of a hard pulsing square.
+        let pulse = 0.30 + 0.18 * sin(game.time * 10)
+        var g = e.color; g.w = pulse
+        radialGlow(cx: e.position.x, cy: e.position.y,
+                   rx: e.size.x * 0.95, ry: e.size.y * 1.4, g, to: &additiveVerts)
+        // Tighter, brighter inner core glow.
+        var core = e.color; core.w = pulse * 0.8
+        radialGlow(cx: e.position.x, cy: e.position.y,
+                   rx: e.size.x * 0.55, ry: e.size.y * 0.8, core, to: &additiveVerts)
     }
 
     func drawPowerUps(to arr: inout [SpriteVertex]) {
