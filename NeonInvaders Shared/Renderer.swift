@@ -13,11 +13,14 @@ class Renderer: NSObject, MTKViewDelegate {
     let commandQueue: MTLCommandQueue
     let normalPipeline: MTLRenderPipelineState
     let additivePipeline: MTLRenderPipelineState
+    var titlePipeline: MTLRenderPipelineState!
+    var titleTexture: MTLTexture?
 
     let game = GameEngine()
 
     var normalVerts: [SpriteVertex] = []
     var additiveVerts: [SpriteVertex] = []
+    var titleVerts: [TexVertex] = []
 
     // Pre-allocated GPU buffers
     var normalBuffer: MTLBuffer!
@@ -160,6 +163,26 @@ class Renderer: NSObject, MTKViewDelegate {
 
         super.init()
 
+        // Textured pipeline for the splash title image (alpha-blended).
+        if let tvert = lib.makeFunction(name: "texVertex"),
+           let tfrag = lib.makeFunction(name: "texFragment") {
+            let d = MTLRenderPipelineDescriptor()
+            d.vertexFunction = tvert; d.fragmentFunction = tfrag
+            d.colorAttachments[0].pixelFormat = metalKitView.colorPixelFormat
+            d.colorAttachments[0].isBlendingEnabled = true
+            d.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
+            d.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
+            d.colorAttachments[0].sourceAlphaBlendFactor = .sourceAlpha
+            d.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
+            titlePipeline = try? dev.makeRenderPipelineState(descriptor: d)
+        }
+
+        // Load the title logo from the asset catalog.
+        let loader = MTKTextureLoader(device: dev)
+        titleTexture = try? loader.newTexture(name: "Title", scaleFactor: 1.0, bundle: nil,
+                                              options: [.SRGB: true,
+                                                        .textureUsage: NSNumber(value: MTLTextureUsage.shaderRead.rawValue)])
+
         let bufLen = Renderer.maxVertices * MemoryLayout<SpriteVertex>.stride
         normalBuffer   = dev.makeBuffer(length: bufLen, options: .storageModeShared)
         additiveBuffer = dev.makeBuffer(length: bufLen, options: .storageModeShared)
@@ -180,6 +203,15 @@ class Renderer: NSObject, MTKViewDelegate {
         let tr = SpriteVertex(position: SIMD2(x+w, y),   color: c)
         let bl = SpriteVertex(position: SIMD2(x,   y+h), color: c)
         let br = SpriteVertex(position: SIMD2(x+w, y+h), color: c)
+        arr += [tl, tr, bl, tr, br, bl]
+    }
+
+    /// Textured quad (uv 0..1, top-left origin) with an rgba tint.
+    func texQuad(x: Float, y: Float, w: Float, h: Float, tint: SIMD4<Float>, to arr: inout [TexVertex]) {
+        let tl = TexVertex(position: SIMD2(x,   y),   uv: SIMD2(0, 0), color: tint)
+        let tr = TexVertex(position: SIMD2(x+w, y),   uv: SIMD2(1, 0), color: tint)
+        let bl = TexVertex(position: SIMD2(x,   y+h), uv: SIMD2(0, 1), color: tint)
+        let br = TexVertex(position: SIMD2(x+w, y+h), uv: SIMD2(1, 1), color: tint)
         arr += [tl, tr, bl, tr, br, bl]
     }
 
@@ -441,7 +473,8 @@ class Renderer: NSObject, MTKViewDelegate {
 
     // MARK: - Screens
 
-    func drawSplash(to arr: inout [SpriteVertex]) {
+    /// Fallback wavy-text title, used only if the logo texture fails to load.
+    func drawSplashTitleText(to arr: inout [SpriteVertex]) {
         let W = Renderer.gameW, H = Renderer.gameH; let cx = W/2
 
         // Animated rainbow title, stacked on two lines so it fits the narrow screen.
@@ -457,16 +490,32 @@ class Renderer: NSObject, MTKViewDelegate {
         }
         drawTitleLine("INFINITYBALL",  y: H*0.10, s: 3.5, phase: 0)
         drawTitleLine("NEON INVADERS", y: H*0.17, s: 3.5, phase: 0.33)
+    }
 
-        drawTextC("HIGH SCORES", cx: cx, y: H*0.30, s: 3, SIMD4(1,0.8,0.2,1), to: &arr)
-        quad(x: cx-130, y: H*0.30+24, w: 260, h: 2, SIMD4(1,0.8,0.2,0.6), to: &arr)
+    func drawSplash(to arr: inout [SpriteVertex]) {
+        let W = Renderer.gameW, H = Renderer.gameH; let cx = W/2
+
+        // Title logo image, with a gentle bob. Falls back to wavy text if the
+        // texture failed to load.
+        if titleTexture != nil {
+            let tw = W * 0.64
+            let th = tw * (1535.0 / 1485.0)
+            let bob = sin(game.time * 1.5) * 4
+            texQuad(x: cx - tw/2, y: H*0.03 + bob, w: tw, h: th,
+                    tint: SIMD4(1, 1, 1, 1), to: &titleVerts)
+        } else {
+            drawSplashTitleText(to: &arr)
+        }
+
+        drawTextC("HIGH SCORES", cx: cx, y: H*0.42, s: 3, SIMD4(1,0.8,0.2,1), to: &arr)
+        quad(x: cx-130, y: H*0.42+24, w: 260, h: 2, SIMD4(1,0.8,0.2,0.6), to: &arr)
 
         let rankColors: [SIMD4<Float>] = [
             SIMD4(1,0.85,0.1,1), SIMD4(0.8,0.8,0.8,1), SIMD4(0.8,0.55,0.3,1),
             SIMD4(0.7,0.9,1,1), SIMD4(0.7,0.9,1,1)
         ]
         for (i, hs) in game.highScores.prefix(5).enumerated() {
-            let ry = H*0.38 + Float(i)*28; let c = rankColors[i]
+            let ry = H*0.49 + Float(i)*25; let c = rankColors[i]
             drawText("#\(i+1)", x: cx-130, y: ry, s: 2, c, to: &arr)
             drawText("\(hs.score)", x: cx-60, y: ry, s: 2, c, to: &arr)
             drawText("LVL \(hs.level)", x: cx+60, y: ry, s: 2, c, to: &arr)
@@ -537,6 +586,7 @@ class Renderer: NSObject, MTKViewDelegate {
 
         normalVerts.removeAll(keepingCapacity: true)
         additiveVerts.removeAll(keepingCapacity: true)
+        titleVerts.removeAll(keepingCapacity: true)
 
         // --- Phase 1: full-screen background in drawable space (not transformed) ---
         drawBackground(to: &normalVerts)
@@ -587,6 +637,10 @@ class Renderer: NSObject, MTKViewDelegate {
         for i in bgAdditive..<additiveVerts.count {
             additiveVerts[i].position = additiveVerts[i].position * s + off
         }
+        // Title image lives entirely in game space; transform all of it.
+        for i in 0..<titleVerts.count {
+            titleVerts[i].position = titleVerts[i].position * s + off
+        }
 
         // --- Submit ---
         guard let rpd = view.currentRenderPassDescriptor,
@@ -607,6 +661,15 @@ class Renderer: NSObject, MTKViewDelegate {
 
         submit(normalVerts,   gpuBuf: normalBuffer,   pipeline: normalPipeline)
         submit(additiveVerts, gpuBuf: additiveBuffer, pipeline: additivePipeline)
+
+        // Title logo (textured), drawn on top of the splash background.
+        if !titleVerts.isEmpty, let tex = titleTexture, let tp = titlePipeline {
+            enc.setRenderPipelineState(tp)
+            enc.setVertexBytes(&uniforms, length: MemoryLayout<GameUniforms>.stride, index: 1)
+            enc.setVertexBytes(titleVerts, length: titleVerts.count * MemoryLayout<TexVertex>.stride, index: 0)
+            enc.setFragmentTexture(tex, index: 0)
+            enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: titleVerts.count)
+        }
 
         enc.endEncoding()
         if let drawable = view.currentDrawable { cb.present(drawable) }

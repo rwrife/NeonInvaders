@@ -27,6 +27,12 @@ typedef struct {
 } SpriteVertex;
 
 typedef struct {
+    vector_float2 position;
+    vector_float2 uv;
+    vector_float4 color;
+} TexVertex;
+
+typedef struct {
     vector_float2 resolution;
     float time;
     float padding;
