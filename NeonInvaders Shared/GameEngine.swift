@@ -80,6 +80,7 @@ struct UFO {
 struct HighScore {
     var score: Int
     var level: Int
+    var wave: Int = 1
 }
 
 class GameEngine {
@@ -146,23 +147,21 @@ class GameEngine {
         if let arr = UserDefaults.standard.array(forKey: "NeonHighScores") as? [[String: Int]] {
             highScores = arr.compactMap {
                 guard let s = $0["score"], let l = $0["level"] else { return nil }
-                return HighScore(score: s, level: l)
+                return HighScore(score: s, level: l, wave: $0["wave"] ?? 1)
             }.sorted { $0.score > $1.score }
         }
         if highScores.isEmpty {
-            highScores = [5000, 3500, 2000, 1200, 500].enumerated().map {
-                HighScore(score: $0.element, level: max(1, $0.offset))
-            }
+            highScores = (0..<5).map { _ in HighScore(score: 0, level: 1, wave: 1) }
         }
     }
 
     func saveHighScore() {
         var all = highScores
-        all.append(HighScore(score: score, level: level))
+        all.append(HighScore(score: score, level: level, wave: wave))
         all.sort { $0.score > $1.score }
         if all.count > 10 { all = Array(all.prefix(10)) }
         highScores = all
-        UserDefaults.standard.set(all.map { ["score": $0.score, "level": $0.level] }, forKey: "NeonHighScores")
+        UserDefaults.standard.set(all.map { ["score": $0.score, "level": $0.level, "wave": $0.wave] }, forKey: "NeonHighScores")
     }
 
     // MARK: - Setup

@@ -6,6 +6,11 @@
 import Metal
 import MetalKit
 import simd
+#if os(iOS)
+import UIKit
+#elseif os(macOS)
+import AppKit
+#endif
 
 class Renderer: NSObject, MTKViewDelegate {
 
@@ -100,6 +105,7 @@ class Renderer: NSObject, MTKViewDelegate {
         ".": [0x00,0x00,0x00,0x00,0x00,0x00,0x04],
         "+": [0x00,0x04,0x04,0x1F,0x04,0x04,0x00],
         "&": [0x0C,0x12,0x14,0x08,0x15,0x12,0x0D],
+        "?": [0x0E,0x11,0x01,0x02,0x04,0x00,0x04],
     ]
 
     // 8×8 alien pixel art – two animation frames each
@@ -179,11 +185,10 @@ class Renderer: NSObject, MTKViewDelegate {
             titlePipeline = try? dev.makeRenderPipelineState(descriptor: d)
         }
 
-        // Load the title logo from the asset catalog.
-        let loader = MTKTextureLoader(device: dev)
-        titleTexture = try? loader.newTexture(name: "Title", scaleFactor: 1.0, bundle: nil,
-                                              options: [.SRGB: true,
-                                                        .textureUsage: NSNumber(value: MTLTextureUsage.shaderRead.rawValue)])
+        // Load the title logo, decoding manually so the alpha channel is
+        // preserved (MTKTextureLoader.newTexture(name:) can drop alpha for
+        // asset-catalog images, rendering the transparent background opaque).
+        titleTexture = Renderer.loadTexture(named: "Title", device: dev)
 
         let bufLen = Renderer.maxVertices * MemoryLayout<SpriteVertex>.stride
         normalBuffer   = dev.makeBuffer(length: bufLen, options: .storageModeShared)
@@ -520,7 +525,7 @@ class Renderer: NSObject, MTKViewDelegate {
             let ry = H*0.49 + Float(i)*25; let c = rankColors[i]
             drawText("#\(i+1)", x: cx-130, y: ry, s: 2, c, to: &arr)
             drawText("\(hs.score)", x: cx-60, y: ry, s: 2, c, to: &arr)
-            drawText("LVL \(hs.level)", x: cx+60, y: ry, s: 2, c, to: &arr)
+            drawText("LVL \(hs.level)-\(hs.wave)", x: cx+50, y: ry, s: 2, c, to: &arr)
         }
 
         let demos: [(AlienType, SIMD4<Float>, String)] = [
@@ -536,8 +541,8 @@ class Renderer: NSObject, MTKViewDelegate {
             drawText(pts, x: cx-40, y: dy+8, s: 2, c, to: &arr)
         }
         let uy = H*0.66 + 3*32
-        pixelArt16(Self.ufoArt, bits: 12, x: cx-88, y: uy, s: 2.5, SIMD4(1,0.2,0.8,1), to: &arr)
-        drawText("= ??? PTS", x: cx-40, y: uy+6, s: 2, SIMD4(1,0.2,0.8,1), to: &arr)
+        pixelArt16(Self.ufoArt, bits: 12, x: cx-83, y: uy+5, s: 2.5, SIMD4(1,0.2,0.8,1), to: &arr)
+        drawText("= ?? PTS", x: cx-40, y: uy+8, s: 2, SIMD4(1,0.2,0.8,1), to: &arr)
 
         if Int(game.time*2) & 1 == 0 {
             #if os(iOS)
@@ -679,6 +684,45 @@ class Renderer: NSObject, MTKViewDelegate {
     }
 
     // MARK: - Utility
+
+    /// Loads a named asset-catalog image into a premultiplied RGBA texture,
+    /// decoding via CGImage so the alpha channel is always preserved.
+    static func loadTexture(named name: String, device: MTLDevice) -> MTLTexture? {
+        guard let cg = cgImage(named: name) else { return nil }
+        let w = cg.width, h = cg.height
+        guard w > 0, h > 0 else { return nil }
+        let bytesPerRow = w * 4
+        var data = [UInt8](repeating: 0, count: bytesPerRow * h)
+        let space = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+        let bitmap = CGImageAlphaInfo.premultipliedLast.rawValue
+        guard let ctx = CGContext(data: &data, width: w, height: h,
+                                  bitsPerComponent: 8, bytesPerRow: bytesPerRow,
+                                  space: space, bitmapInfo: bitmap) else { return nil }
+        // Row 0 in memory = top of the image (matches texture UV origin).
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+
+        let desc = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba8Unorm_srgb, width: w, height: h, mipmapped: false)
+        desc.usage = .shaderRead
+        guard let tex = device.makeTexture(descriptor: desc) else { return nil }
+        data.withUnsafeBytes { ptr in
+            tex.replace(region: MTLRegionMake2D(0, 0, w, h),
+                        mipmapLevel: 0, withBytes: ptr.baseAddress!, bytesPerRow: bytesPerRow)
+        }
+        return tex
+    }
+
+    static func cgImage(named name: String) -> CGImage? {
+        #if os(iOS)
+        return UIImage(named: name)?.cgImage
+        #elseif os(macOS)
+        guard let img = NSImage(named: name) else { return nil }
+        var rect = CGRect(origin: .zero, size: img.size)
+        return img.cgImage(forProposedRect: &rect, context: nil, hints: nil)
+        #else
+        return nil
+        #endif
+    }
 
     func hsvToRgb(_ h: Float, _ s: Float, _ v: Float) -> SIMD4<Float> {
         let i = Int(h * 6); let f = h * 6 - Float(i)
