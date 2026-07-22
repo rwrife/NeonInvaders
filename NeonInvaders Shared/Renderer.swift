@@ -504,9 +504,9 @@ class Renderer: NSObject, MTKViewDelegate {
 
         // Title logo image, with a gentle bob. Falls back to wavy text if the
         // texture failed to load.
-        if titleTexture != nil {
+        if let tex = titleTexture {
             let tw = W * 0.64
-            let th = tw * (1535.0 / 1485.0)
+            let th = tw * Float(tex.height) / Float(tex.width)
             let bob = sin(game.time * 1.5) * 4
             texQuad(x: cx - tw/2, y: H*0.03 + bob, w: tw, h: th,
                     tint: SIMD4(1, 1, 1, 1), to: &titleVerts)

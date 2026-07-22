@@ -144,7 +144,7 @@ class GameEngine {
     // MARK: - High scores
 
     func loadHighScores() {
-        if let arr = UserDefaults.standard.array(forKey: "NeonHighScores") as? [[String: Int]] {
+        if let arr = UserDefaults.standard.array(forKey: "NeonHighScoresV2") as? [[String: Int]] {
             highScores = arr.compactMap {
                 guard let s = $0["score"], let l = $0["level"] else { return nil }
                 return HighScore(score: s, level: l, wave: $0["wave"] ?? 1)
@@ -161,7 +161,7 @@ class GameEngine {
         all.sort { $0.score > $1.score }
         if all.count > 10 { all = Array(all.prefix(10)) }
         highScores = all
-        UserDefaults.standard.set(all.map { ["score": $0.score, "level": $0.level, "wave": $0.wave] }, forKey: "NeonHighScores")
+        UserDefaults.standard.set(all.map { ["score": $0.score, "level": $0.level, "wave": $0.wave] }, forKey: "NeonHighScoresV2")
     }
 
     // MARK: - Setup
