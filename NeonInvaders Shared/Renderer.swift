@@ -268,15 +268,23 @@ class Renderer: NSObject, MTKViewDelegate {
             // Gentle rotation of the lobe cluster for a living, swirling feel.
             let rot = game.time * 0.05 + Float(ni)
             let cr = cos(rot), sr = sin(rot)
-            for (ox, oy, rs, ic) in lobes {
-                let lx = ox * r, ly = oy * r
+            for (li, lobe) in lobes.enumerated() {
+                let (ox, oy, rs, ic) = lobe
+                // Per-lobe wander: each drifts on its own slow sine path so the
+                // cloud's silhouette continuously morphs and breathes.
+                let ph = Float(ni) * 2.3 + Float(li) * 1.1
+                let wanderX = sin(game.time * 0.18 + ph) * 0.18
+                let wanderY = cos(game.time * 0.15 + ph * 1.3) * 0.18
+                let breathe = 1.0 + 0.22 * sin(game.time * 0.4 + ph * 0.7)
+                let lx = (ox + wanderX) * r, ly = (oy + wanderY) * r
                 let rx = lx * cr - ly * sr
                 let ry = lx * sr + ly * cr
                 var col = nc
-                col.w = ic * Float(pulse)
-                // Slightly elliptical lobes for a more organic cloud shape.
+                // Lower overall opacity + per-lobe intensity flicker.
+                col.w = ic * Float(pulse) * (0.85 + 0.15 * sin(game.time * 0.5 + ph)) * 0.45
+                // Slightly elliptical, breathing lobes for an organic cloud shape.
                 radialGlow(cx: cx + rx, cy: cy + ry,
-                           rx: r * rs * 1.15, ry: r * rs * 0.85,
+                           rx: r * rs * breathe * 1.15, ry: r * rs * breathe * 0.85,
                            col, to: &additiveVerts)
             }
         }
@@ -483,7 +491,7 @@ class Renderer: NSObject, MTKViewDelegate {
         }
 
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
-        drawTextC("HUNTER RIFE & DAD   V\(version)", cx: cx, y: H*0.95, s: 1.5, SIMD4(0.5,0.5,0.6,1), to: &arr)
+        drawTextC("BY HUNTER RIFE & DAD   V\(version)", cx: cx, y: H*0.95, s: 1.5, SIMD4(0.5,0.5,0.6,1), to: &arr)
     }
 
     func drawGameOver(to arr: inout [SpriteVertex]) {
