@@ -357,10 +357,8 @@ class Renderer: NSObject, MTKViewDelegate {
         drawText("SCORE:\(game.score)", x: 10, y: 8, s: 2, SIMD4(0.3,1,0.3,1), to: &arr)
         let hi = game.highScores.first?.score ?? 0
         drawTextC("HI:\(hi)", cx: W/2, y: 8, s: 2, SIMD4(1,0.8,0.2,1), to: &arr)
-        let lvl = "LVL:\(game.level)"
+        let lvl = "LVL:\(game.level)-\(game.wave)"
         drawText(lvl, x: W - textW(lvl, s: 2) - 10, y: 8, s: 2, SIMD4(0.6,0.6,1,1), to: &arr)
-        let wv = "WAVE \(game.wave)/3"
-        drawText(wv, x: W - textW(wv, s: 1.5) - 10, y: 24, s: 1.5, SIMD4(1,0.5,0.9,1), to: &arr)
 
         for i in 0..<game.lives {
             pixelArt16(Self.playerArt, bits: 9, x: 10 + Float(i)*22, y: H-20, s: 1.8, SIMD4(0.2,1,0.4,1), to: &arr)
