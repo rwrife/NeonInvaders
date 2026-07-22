@@ -182,6 +182,22 @@ class Renderer: NSObject, MTKViewDelegate {
         arr += [tl, tr, bl, tr, br, bl]
     }
 
+    /// Soft radial gradient blob: bright center vertex fading to transparent edges.
+    /// Rendered as a triangle fan; ideal for additive glows/nebulae.
+    func radialGlow(cx: Float, cy: Float, rx: Float, ry: Float,
+                    _ center: SIMD4<Float>, segments: Int = 28,
+                    to arr: inout [SpriteVertex]) {
+        let edge = SIMD4<Float>(center.x, center.y, center.z, 0)
+        let c = SpriteVertex(position: SIMD2(cx, cy), color: center)
+        for i in 0..<segments {
+            let a0 = Float(i)     / Float(segments) * .pi * 2
+            let a1 = Float(i + 1) / Float(segments) * .pi * 2
+            let v0 = SpriteVertex(position: SIMD2(cx + cos(a0)*rx, cy + sin(a0)*ry), color: edge)
+            let v1 = SpriteVertex(position: SIMD2(cx + cos(a1)*rx, cy + sin(a1)*ry), color: edge)
+            arr += [c, v0, v1]
+        }
+    }
+
     func pixelArt8(_ rows: [UInt8], x: Float, y: Float, s: Float, _ c: SIMD4<Float>, to arr: inout [SpriteVertex]) {
         for (row, byte) in rows.enumerated() {
             for col in 0..<8 where (byte >> (7-col)) & 1 == 1 {
@@ -223,20 +239,45 @@ class Renderer: NSObject, MTKViewDelegate {
     func drawBackground(to arr: inout [SpriteVertex]) {
         let vx = viewSize.x, vy = viewSize.y
 
-        // Subtle deep-space nebula blobs (additive)
-        let nebulae: [(Float, Float, SIMD4<Float>)] = [
-            (0.2, 0.3, SIMD4(0.05, 0.02, 0.12, 1)),
-            (0.7, 0.6, SIMD4(0.02, 0.05, 0.10, 1)),
-            (0.5, 0.15, SIMD4(0.06, 0.02, 0.08, 1)),
-            (0.3, 0.8, SIMD4(0.02, 0.06, 0.08, 1)),
+        // Soft deep-space nebula clouds (additive radial gradients).
+        // Each nebula is built from several overlapping offset blobs so the
+        // silhouette is irregular and wispy rather than a hard rectangle.
+        // (nx, ny, radius, base color)
+        let nebulae: [(Float, Float, Float, SIMD4<Float>)] = [
+            (0.22, 0.30, 240, SIMD4(0.30, 0.10, 0.55, 1)),  // violet
+            (0.72, 0.60, 260, SIMD4(0.08, 0.22, 0.45, 1)),  // blue
+            (0.50, 0.16, 200, SIMD4(0.40, 0.12, 0.30, 1)),  // magenta
+            (0.30, 0.82, 220, SIMD4(0.06, 0.30, 0.32, 1)),  // teal
         ]
-        for (nx, ny, nc) in nebulae {
-            let pulse = 0.6 + 0.4 * sin(game.time * 0.3 + nx * 5)
-            var c = nc; c.w = Float(pulse) * 0.8
+        // Sub-blob offsets (unit space) + relative radius/intensity, reused per nebula.
+        let lobes: [(Float, Float, Float, Float)] = [
+            ( 0.00,  0.00, 1.00, 0.55),
+            ( 0.55, -0.25, 0.70, 0.40),
+            (-0.45,  0.30, 0.75, 0.38),
+            ( 0.20,  0.55, 0.55, 0.30),
+            (-0.30, -0.50, 0.50, 0.28),
+        ]
+        for (ni, neb) in nebulae.enumerated() {
+            let (nx, ny, r, nc) = neb
+            let pulse = 0.7 + 0.3 * sin(game.time * 0.25 + Float(ni) * 1.7)
             // Slow parallax drift (farthest layer), wrapping vertically.
-            let baseY = ny * vy - 100
-            let y = (baseY + game.time * 5).truncatingRemainder(dividingBy: vy + 200) - 100
-            quad(x: nx*vx - 150, y: y, w: 300, h: 200, c, to: &additiveVerts)
+            let baseY = ny * vy
+            let cy = (baseY + game.time * 5).truncatingRemainder(dividingBy: vy + 2*r) - r
+            let cx = nx * vx
+            // Gentle rotation of the lobe cluster for a living, swirling feel.
+            let rot = game.time * 0.05 + Float(ni)
+            let cr = cos(rot), sr = sin(rot)
+            for (ox, oy, rs, ic) in lobes {
+                let lx = ox * r, ly = oy * r
+                let rx = lx * cr - ly * sr
+                let ry = lx * sr + ly * cr
+                var col = nc
+                col.w = ic * Float(pulse)
+                // Slightly elliptical lobes for a more organic cloud shape.
+                radialGlow(cx: cx + rx, cy: cy + ry,
+                           rx: r * rs * 1.15, ry: r * rs * 0.85,
+                           col, to: &additiveVerts)
+            }
         }
 
         // Parallax scrolling starfield: brighter (nearer) stars scroll faster.
@@ -398,8 +439,8 @@ class Renderer: NSObject, MTKViewDelegate {
                 tx += 6*s
             }
         }
-        drawTitleLine("INFINITYBALL", y: H*0.10, s: 3.5, phase: 0)
-        drawTitleLine("INVADERS",     y: H*0.17, s: 3.5, phase: 0.33)
+        drawTitleLine("INFINITYBALL",  y: H*0.10, s: 3.5, phase: 0)
+        drawTitleLine("NEON INVADERS", y: H*0.17, s: 3.5, phase: 0.33)
 
         drawTextC("HIGH SCORES", cx: cx, y: H*0.30, s: 3, SIMD4(1,0.8,0.2,1), to: &arr)
         quad(x: cx-130, y: H*0.30+24, w: 260, h: 2, SIMD4(1,0.8,0.2,0.6), to: &arr)
