@@ -266,7 +266,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				INFOPLIST_KEY_CFBundleDisplayName = "Infinityball Invaders";
-				PRODUCT_BUNDLE_IDENTIFIER = com.infinityball.NeonInvaders;
+				PRODUCT_BUNDLE_IDENTIFIER = com.infinityball.neoninvaders;
 				PRODUCT_NAME = NeonInvaders;
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -302,7 +302,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				INFOPLIST_KEY_CFBundleDisplayName = "Infinityball Invaders";
-				PRODUCT_BUNDLE_IDENTIFIER = com.infinityball.NeonInvaders;
+				PRODUCT_BUNDLE_IDENTIFIER = com.infinityball.neoninvaders;
 				PRODUCT_NAME = NeonInvaders;
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -340,7 +340,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 26.5;
 				MARKETING_VERSION = 1.0;
 				INFOPLIST_KEY_CFBundleDisplayName = "Infinityball Invaders";
-				PRODUCT_BUNDLE_IDENTIFIER = com.infinityball.NeonInvaders;
+				PRODUCT_BUNDLE_IDENTIFIER = com.infinityball.neoninvaders;
 				PRODUCT_NAME = NeonInvaders;
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = macosx;
@@ -377,7 +377,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 26.5;
 				MARKETING_VERSION = 1.0;
 				INFOPLIST_KEY_CFBundleDisplayName = "Infinityball Invaders";
-				PRODUCT_BUNDLE_IDENTIFIER = com.infinityball.NeonInvaders;
+				PRODUCT_BUNDLE_IDENTIFIER = com.infinityball.neoninvaders;
 				PRODUCT_NAME = NeonInvaders;
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = macosx;
