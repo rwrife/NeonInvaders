@@ -96,6 +96,7 @@ class Renderer: NSObject, MTKViewDelegate {
         "!": [0x04,0x04,0x04,0x04,0x04,0x00,0x04],
         ".": [0x00,0x00,0x00,0x00,0x00,0x00,0x04],
         "+": [0x00,0x04,0x04,0x1F,0x04,0x04,0x00],
+        "&": [0x0C,0x12,0x14,0x08,0x15,0x12,0x0D],
     ]
 
     // 8×8 alien pixel art – two animation frames each
@@ -482,7 +483,7 @@ class Renderer: NSObject, MTKViewDelegate {
         }
 
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
-        drawTextC("COPYRIGHT RYAN RIFE   V\(version)", cx: cx, y: H*0.95, s: 1.5, SIMD4(0.5,0.5,0.6,1), to: &arr)
+        drawTextC("HUNTER RIFE & DAD   V\(version)", cx: cx, y: H*0.95, s: 1.5, SIMD4(0.5,0.5,0.6,1), to: &arr)
     }
 
     func drawGameOver(to arr: inout [SpriteVertex]) {
