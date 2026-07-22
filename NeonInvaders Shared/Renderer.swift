@@ -386,16 +386,20 @@ class Renderer: NSObject, MTKViewDelegate {
 
     func drawSplash(to arr: inout [SpriteVertex]) {
         let W = Renderer.gameW, H = Renderer.gameH; let cx = W/2
-        let title = "NEON INVADERS"; let ts: Float = 3.5
-        let tw = textW(title, s: ts)
-        var tx = cx - tw/2
-        for (i, ch) in title.enumerated() {
-            let hue = (Float(i)/Float(title.count) + game.time*0.15).truncatingRemainder(dividingBy: 1)
-            let c = hsvToRgb(hue, 1, 1)
-            let bounce = sin(game.time*3 + Float(i)*0.5) * ts * 1.5
-            drawText(String(ch), x: tx, y: H*0.12 - bounce, s: ts, c, to: &arr)
-            tx += 6*ts
+
+        // Animated rainbow title, stacked on two lines so it fits the narrow screen.
+        func drawTitleLine(_ text: String, y: Float, s: Float, phase: Float) {
+            var tx = cx - textW(text, s: s) / 2
+            for (i, ch) in text.enumerated() {
+                let hue = (Float(i)/Float(text.count) + game.time*0.15 + phase).truncatingRemainder(dividingBy: 1)
+                let c = hsvToRgb(hue, 1, 1)
+                let bounce = sin(game.time*3 + Float(i)*0.5 + phase*6) * s * 1.5
+                drawText(String(ch), x: tx, y: y - bounce, s: s, c, to: &arr)
+                tx += 6*s
+            }
         }
+        drawTitleLine("INFINITYBALL", y: H*0.10, s: 3.5, phase: 0)
+        drawTitleLine("INVADERS",     y: H*0.17, s: 3.5, phase: 0.33)
 
         drawTextC("HIGH SCORES", cx: cx, y: H*0.30, s: 3, SIMD4(1,0.8,0.2,1), to: &arr)
         quad(x: cx-130, y: H*0.30+24, w: 260, h: 2, SIMD4(1,0.8,0.2,0.6), to: &arr)
