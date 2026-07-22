@@ -170,9 +170,11 @@ class Renderer: NSObject, MTKViewDelegate {
             d.vertexFunction = tvert; d.fragmentFunction = tfrag
             d.colorAttachments[0].pixelFormat = metalKitView.colorPixelFormat
             d.colorAttachments[0].isBlendingEnabled = true
-            d.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
+            // MTKTextureLoader premultiplies alpha, so use premultiplied blending
+            // (src factor = .one) or transparent areas render as an opaque haze.
+            d.colorAttachments[0].sourceRGBBlendFactor = .one
             d.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
-            d.colorAttachments[0].sourceAlphaBlendFactor = .sourceAlpha
+            d.colorAttachments[0].sourceAlphaBlendFactor = .one
             d.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
             titlePipeline = try? dev.makeRenderPipelineState(descriptor: d)
         }
